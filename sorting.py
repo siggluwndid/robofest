@@ -30,27 +30,41 @@ def connect_arduino():
     pass
 
 
-# ==========================================
-# 3. 화물 판별 함수 (핵심 비전 알고리즘 영역)
-# ==========================================
 def classify_cargo(roi):
-    """
-    입력: 잘라낸 중앙 영역 이미지 (roi)
-    출력: '1' (일반 화물), '2' (위험물), 또는 None (물체 없음)
-    """
-    # TODO (임시 테스트): BGR -> HSV 변환 후 색상 마스크 픽셀 수로 '1' 또는 '2' 판별
-    # TODO (프린팅 완료 후): 위 색상 코드를 지우고 TFLite / ONNX 모델 추론 코드로 교체
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+
+    lower_blue = np.array([100, 120, 70])
+    upper_blue = np.array([130, 255, 255])
+    mask_normal = cv2.inRange(hsv, lower_blue, upper_blue)
+
+    lower_red1 = np.array([0, 120, 70])
+    upper_red1 = np.array([10, 255, 255])
+    lower_red2 = np.array([170, 120, 70])
+    upper_red2 = np.array([180, 255, 255])
+    mask_hazard = cv2.bitwise_or(
+        cv2.inRange(hsv, lower_red1, upper_red1),
+        cv2.inRange(hsv, lower_red2, upper_red2)
+    )
+
+    if cv2.countNonZero(mask_hazard) > 2000:
+        return '2'
+    elif cv2.countNonZero(mask_normal) > 2000:
+        return '1'
     return None
 
 
-# ==========================================
-# 4. 메인 제어 루프
-# ==========================================
 def main():
     uno = connect_arduino()
     cap = cv2.VideoCapture(0)
 
-    # TODO: 카메라 해상도 설정 (cap.set) 및 정상 오픈 여부(cap.isOpened) 확인
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+    if not cap.isOpened():
+        print("웹캠을 열 수 없습니다.")
+        if uno is not None and uno.is_open:
+            uno.close()
+        return
 
     last_sent_time = 0
 
@@ -60,25 +74,31 @@ def main():
             if not ret:
                 continue
 
-            # TODO: frame 배열 슬라이싱으로 화면 중앙 관심 영역(ROI) 잘라내기
-            roi = frame
+            h, w = frame.shape[:2]
+            roi = frame[h // 4 : 3 * h // 4, w // 4 : 3 * w // 4]
 
-            # 판별 함수 호출
             cmd = classify_cargo(roi)
             now = time.time()
 
-            # TODO: cmd가 '1' 또는 '2'이고 쿨다운 시간이 지났는지 확인
-            # TODO: 조건 충족 시 uno.write()로 바이트 전송 및 last_sent_time 갱신
+            if cmd in ('1', '2') and (now - last_sent_time) >= COOLDOWN_SEC:
+                if uno is not None:
+                    uno.write(cmd.encode('utf-8'))
+                print(f"전송 완료: {cmd}")
+                last_sent_time = now
 
-            # TODO: (선택) uno.in_waiting으로 아두이노의 응답(ACK) 읽어서 출력
+            if uno is not None and uno.in_waiting > 0:
+                ack = uno.readline().decode('utf-8', errors='ignore').strip()
+                if ack:
+                    print(f"우노 응답: {ack}")
 
             time.sleep(0.03)
 
     except KeyboardInterrupt:
         print("프로그램을 종료합니다.")
     finally:
-        # TODO: 카메라(cap.release)와 시리얼 포트(uno.close) 안전하게 닫기
-        pass
+        cap.release()
+        if uno is not None and uno.is_open:
+            uno.close()
 
 
 if __name__ == '__main__':
