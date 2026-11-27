@@ -4,7 +4,7 @@ import serial
 import time
 import glob
 
-# ==========================================
+# =========================================
 # 1. 전역 설정 상수 (통신 속도, 쿨다운 등)
 # ==========================================
 BAUD_RATE = 9600
@@ -26,8 +26,6 @@ def connect_arduino():
         except:
             print("연결 실패") #연결을 실패했을 경우에 연결 실패 메시지를 출력하고 다음 포트가 있다면 다음 포트 연결을 시도합니다.
     return None #그럼에도 연결에 실패할경우 아무것도 반환하지않고 함수를 종료합니다.
-
-    pass
 
 
 def classify_cargo(roi):
@@ -83,7 +81,9 @@ def main():
             if cmd in ('1', '2') and (now - last_sent_time) >= COOLDOWN_SEC:
                 if uno is not None:
                     uno.write(cmd.encode('utf-8'))
-                print(f"전송 완료: {cmd}")
+                    print(f"전송 완료: {cmd}")
+                else:
+                    print(f"감지됨(아두이노 미연결): {cmd}")
                 last_sent_time = now
 
             if uno is not None and uno.in_waiting > 0:
